@@ -19,6 +19,9 @@ SHORT_WINDOW = config["SHORT_WINDOW"]
 LONG_WINDOW = config["LONG_WINDOW"]
 SYMBOL = config["SYMBOL"]
 
+# Your Render app URL (replace with your real one)
+WEBHOOK_URL = "https://telegram-bot-30bi.onrender.com/webhook"
+
 app = Flask(__name__)
 
 price_history = deque(maxlen=LONG_WINDOW + 2)
@@ -122,6 +125,7 @@ def home():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    """Handle incoming Telegram messages."""
     data = request.json or {}
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
@@ -136,10 +140,28 @@ def webhook():
 
 
 def start_thread():
+    """Start price monitoring thread."""
     thread = threading.Thread(target=polling_loop, daemon=True)
     thread.start()
 
 
+def setup_webhook():
+    """Automatically register webhook on startup."""
+    try:
+        r = requests.get(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
+            params={"url": WEBHOOK_URL},
+            timeout=10
+        )
+        if r.ok:
+            print(f"✅ Webhook set to {WEBHOOK_URL}")
+        else:
+            print(f"⚠️ Failed to set webhook: {r.text}")
+    except Exception as e:
+        print("Webhook setup error:", e)
+
+
 if __name__ == "__main__":
-    start_thread()
+    setup_webhook()   # auto setup
+    start_thread()    # start price monitoring
     app.run(host="0.0.0.0", port=8080)

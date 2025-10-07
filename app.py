@@ -4,6 +4,7 @@ import threading
 import requests
 from collections import deque
 from flask import Flask, request, jsonify
+import random
 
 # Load settings from config.json
 with open("config.json", "r") as f:
@@ -24,9 +25,12 @@ price_history = deque(maxlen=LONG_WINDOW + 2)
 last_signal = {"side": None, "price": None}
 
 
-def send_telegram(text: str):
+def send_telegram(text: str, chat_id: str = None):
+    """Send a message to Telegram chat."""
+    if chat_id is None:
+        chat_id = TELEGRAM_CHAT_ID
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     try:
         r = requests.post(url, json=payload, timeout=10)
         return r.ok
@@ -36,6 +40,7 @@ def send_telegram(text: str):
 
 
 def fetch_price():
+    """Get latest EUR/USD price."""
     try:
         if FOREX_API_URL:
             r = requests.get(FOREX_API_URL, params={"apikey": FOREX_API_KEY}, timeout=10)
@@ -56,9 +61,9 @@ def compute_sma(prices, window):
 
 
 def generate_signal():
+    """Simple moving-average crossover strategy."""
     if len(price_history) < LONG_WINDOW:
         return None, None
-
     short_sma = compute_sma(list(price_history), SHORT_WINDOW)
     long_sma = compute_sma(list(price_history), LONG_WINDOW)
     current_price = price_history[-1]
@@ -72,6 +77,7 @@ def generate_signal():
 
 
 def polling_loop():
+    """Background price monitoring loop."""
     print("📡 Polling started...")
     while True:
         price = fetch_price()
@@ -87,8 +93,26 @@ def polling_loop():
                 last_signal.update({"side": side, "price": p})
         else:
             print("Failed to fetch price.")
-
         time.sleep(POLL_INTERVAL)
+
+
+def simple_ai_response(text: str) -> str:
+    """Very small rule-based AI brain."""
+    text = text.lower()
+    greetings = ["hi", "hello", "hey", "yo"]
+    if any(word in text for word in greetings):
+        return random.choice(["Hey there 👋", "Hello boss!", "Yo! Ready to trade 💹"])
+    if "how" in text and "you" in text:
+        return random.choice(["I’m good and watching the charts 📈", "Doing fine, markets are moving fast!"])
+    if "signal" in text:
+        return "📊 I’ll drop a signal automatically once I detect a trend change."
+    if "help" in text:
+        return "You can say:\n/start – activate bot\nsignal – ask about signals\nhelp – show this message"
+    return random.choice([
+        "Still learning from the charts 😎",
+        "Market data loading... patience pays 📉📈",
+        "Hmm, not sure about that — but I’m watching EUR/USD closely!"
+    ])
 
 
 @app.route("/", methods=["GET"])
@@ -99,8 +123,15 @@ def home():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json or {}
-    msg = f"📢 {data}"
-    send_telegram(msg)
+    if "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        text = data["message"].get("text", "").strip()
+
+        if text.startswith("/start"):
+            send_telegram("🔥 Bot active! Ready to send Forex signals.", chat_id)
+        else:
+            reply = simple_ai_response(text)
+            send_telegram(reply, chat_id)
     return jsonify({"status": "ok"}), 200
 
 
